@@ -3,5 +3,10 @@ name = "locker"
 version = "0.1.0"
 authors = ["enfipy"]
 edition = "2018"
+license = "MIT"
+description = "Named locker"
+homepage = "https://github.com/enfipy/locker-rs"
+repository = "https://github.com/enfipy/locker-rs.git"
+keywords = ["mutex", "lock"]
 
 [dependencies]
