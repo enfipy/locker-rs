@@ -57,6 +57,17 @@ impl Locker {
         let mut locks = self.locks.lock().unwrap();
         locks.entry(name.into()).or_insert(Arc::new(Mutex::new(()))).clone()
     }
+
+    pub fn lock_mutex<N, F, T, E>(&self, name: N, code: F) -> Result<T, E>
+    where
+        N: Into<String>,
+        F: FnOnce() -> Result<T, E>,
+        E: std::error::Error,
+    {
+        let mutex = self.get_mutex(name);
+        let _ = mutex.lock().unwrap();
+        code()
+    }
 }
 
 #[cfg(test)]
@@ -65,7 +76,7 @@ mod tests {
     use std::sync::Arc;
 
     #[test]
-    fn test_locker() {
+    fn test_get_mutex() {
         let handle = {
             let locker = Arc::new(Locker::new());
             let locker_clone = locker.clone();
@@ -109,5 +120,18 @@ mod tests {
         };
         handle.join().unwrap();
         assert!(true);
+    }
+
+    #[test]
+    fn test_lock_mutex() -> Result<(), std::io::Error> {
+        let value = String::from("value");
+        let locker = Arc::new(Locker::new());
+        locker.lock_mutex("name", || {
+            println!("thread mutex locked");
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            println!("thread mutex unlocked");
+            println!("{}", value);
+            Ok(())
+        })
     }
 }
