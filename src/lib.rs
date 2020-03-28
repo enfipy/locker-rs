@@ -1,120 +1,103 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::hash::Hash;
+use std::sync::Arc;
+use tokio::sync::{Mutex, RwLock};
 
-/// Named `Mutex` handler
-pub struct Locker {
-    locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+#[derive(Clone)]
+pub struct Locker<K> {
+    mutexes: Arc<RwLock<HashMap<K, Arc<Mutex<()>>>>>,
 }
 
-impl Locker {
+impl<K: Eq + Hash> Locker<K> {
     pub fn new() -> Self {
         Locker {
-            locks: Mutex::new(HashMap::new()),
+            mutexes: Arc::new(RwLock::new(HashMap::<K, Arc<Mutex<()>>>::new())),
         }
     }
 
-    /// Gets reference to existig named `Mutex` or inserts  new one to `Locker` state.
+    /// Return reference to existig `Mutex` or insert new one.
     ///
-    /// Blocking the current thread until it is able to do so.
-    ///
-    /// Then that `Mutex` can be used for locking thread.
+    /// Locks the current task until it is able to return `Mutex`.
     ///
     /// # Examples
-    ///
-    /// ```
-    /// use std::sync::Arc;
+    /// ```ignore
+    /// use std::time::Duration;
     /// use locker::Locker;
+    /// use tokio::time::delay_for;
     ///
-    /// let locker = Arc::new(Locker::new());
+    /// let locker = Locker::new();
+    /// let mutex = locker.get_mutex(1).await;
+    /// let _guard = mutex.lock().await; // lock
     /// let locker_clone = locker.clone();
-    /// let name = "name";
-    /// let mutex = locker.get_mutex(name); // locks
-    /// let _ = mutex.lock().unwrap();
-    /// std::thread::spawn(move || {
-    ///     let mutex = locker.get_mutex(name);
-    ///     let _ = mutex.lock().unwrap(); // wait
+    /// tokio::spawn(async move {
+    ///     let mutex = locker.get_mutex(1).await;
+    ///     let _guard = mutex.lock().await; // wait
     /// });
-    /// // unlocks first lock
+    /// delay_for(Duration::from_millis(200)).await;
     /// ```
-    pub fn get_mutex<N>(&self, name: N) -> Arc<Mutex<()>>
-    where
-        N: Into<String>,
-    {
-        let mut locks = self.locks.lock().unwrap();
-        let mutex = Arc::new(Mutex::new(()));
-        locks.entry(name.into()).or_insert(mutex).clone()
-    }
-
-    pub fn lock_mutex<N, F, T, E>(&self, name: N, code: F) -> Result<T, E>
-    where
-        N: Into<String>,
-        F: FnOnce() -> Result<T, E>,
-        E: std::error::Error,
-    {
-        let mutex = self.get_mutex(name);
-        let _ = mutex.lock().unwrap();
-        code()
+    pub async fn get_mutex(&self, key: K) -> Arc<Mutex<()>> {
+        {
+            let mutexes = self.mutexes.read().await;
+            let mutex_opt = mutexes.get(&key);
+            if let Some(mutex) = mutex_opt {
+                return mutex.clone();
+            };
+        }
+        let mut mutexes = self.mutexes.write().await;
+        let new_mutex = Arc::new(Mutex::new(()));
+        mutexes.entry(key).or_insert(new_mutex).clone()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::Locker;
-    use std::sync::Arc;
+    use std::time::Duration;
+    use tokio::time::delay_for;
 
-    #[test]
-    fn test_locker() {
-        let locker = Arc::new(Locker::new());
+    #[tokio::test]
+    async fn test_locker() {
+        let locker = Locker::new();
         let locker_clone = locker.clone();
-        let handle = std::thread::spawn(move || {
-            let mutex = locker_clone.get_mutex("name");
+
+        let handle = tokio::spawn(async move {
+            let mutex = locker_clone.get_mutex(1).await;
             loop {
-                println!("thread mutex try to lock");
+                println!("task mutex try to lock");
                 match mutex.try_lock() {
                     Ok(_) => {
-                        println!("thread mutex locked");
-                        std::thread::sleep(std::time::Duration::from_secs(2));
-                        println!("thread mutex unlocked");
+                        println!("task mutex locked");
+                        delay_for(Duration::from_millis(100)).await;
+                        println!("task mutex unlocked");
                         break;
                     }
                     Err(_) => {
-                        println!("thread mutex wait unlock");
-                        std::thread::sleep(std::time::Duration::from_millis(400));
+                        println!("task mutex wait unlock");
+                        delay_for(Duration::from_millis(100)).await;
                         continue;
                     }
                 }
             }
         });
-        let mutex = locker.get_mutex("name");
+
+        let mutex = locker.get_mutex(1).await;
         loop {
             println!("main mutex try to lock");
             match mutex.try_lock() {
                 Ok(_) => {
                     println!("main mutex locked");
-                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    delay_for(Duration::from_millis(100)).await;
                     println!("main mutex unlocked");
                     break;
                 }
                 Err(_) => {
                     println!("main mutex wait for unlock");
-                    std::thread::sleep(std::time::Duration::from_millis(400));
+                    delay_for(Duration::from_millis(100)).await;
                     continue;
                 }
             }
         }
-        handle.join().unwrap()
-    }
 
-    #[test]
-    fn test_lock_mutex() -> Result<(), std::io::Error> {
-        let value = String::from("value");
-        let locker = Arc::new(Locker::new());
-        locker.lock_mutex("name", || {
-            println!("thread mutex locked");
-            std::thread::sleep(std::time::Duration::from_secs(2));
-            println!("thread mutex unlocked");
-            println!("{}", value);
-            Ok(())
-        })
+        handle.await.unwrap();
     }
 }

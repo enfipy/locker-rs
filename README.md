@@ -1,26 +1,25 @@
 # Locker
 
-Utility `locker` - simple named mutex/locker for rust-lang concurrency with no dependencies.
+Utility `locker` - simple async mutex/locker for rust concurrency.
 
 ## Example
 
 Basic usage of `Locker`:
 
 ```rust
-use std::sync::Arc;
+use std::time::Duration;
 use locker::Locker;
+use tokio::time::delay_for;
 
-let locker = Arc::new(Locker::new());
+let locker = Locker::new();
+let mutex = locker.get_mutex(1).await;
+let _guard = mutex.lock().await; // lock
 let locker_clone = locker.clone();
-let name = "name";
-let first = locker.get_mutex(name); // locks
-let _ = first.lock().unwrap();
-std::thread::spawn(move || {
-    let second = locker.get_mutex(name);
-    let _ = second.lock().unwrap(); // wait
-    // unlocks second mutex
+tokio::spawn(async move {
+    let mutex = locker.get_mutex(1).await;
+    let _guard = mutex.lock().await; // wait
 });
-// unlocks first mutex
+delay_for(Duration::from_millis(200)).await;
 ```
 
 ## Run test
