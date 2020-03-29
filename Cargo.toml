@@ -1,16 +1,23 @@
 [package]
 name = "locker"
-version = "0.3.1"
+version = "0.4.0"
 authors = ["enfipy <enfipy@gmail.com>", "olvyko <olvyko@gmail.com>"]
 edition = "2018"
 license = "MIT"
 description = "Simple named mutex/locker for rust-lang concurrency"
+readme = "README.md"
 homepage = "https://github.com/enfipy/locker-rs"
 repository = "https://github.com/enfipy/locker-rs.git"
 keywords = ["mutex", "lock"]
 
 [dependencies]
-tokio = { version = "0.2.13", features = ["sync"] }
+tokio = { version = "0.2.13", features = ["sync"], optional = true }
+
+[features]
+default = ["async"]
+
+async = ["tokio"]
+sync = []
 
 [dev-dependencies]
 tokio = { version = "0.2.13", features = ["full"] }
