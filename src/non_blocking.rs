@@ -5,12 +5,14 @@ use tokio::sync::{Mutex, RwLock};
 
 #[derive(Clone)]
 pub struct AsyncLocker<K, V = ()> {
+    default_mutex_func: Arc<dyn Fn() -> V + Send + Sync + 'static>,
     mutexes: Arc<RwLock<HashMap<K, Arc<Mutex<V>>>>>,
 }
 
-impl<K: Eq + Hash, V: Default> AsyncLocker<K, V> {
-    pub fn new() -> Self {
+impl<K: Eq + Hash, V> AsyncLocker<K, V> {
+    pub fn new(default_mutex_func: impl Fn() -> V + Send + Sync + 'static) -> Self {
         AsyncLocker {
+            default_mutex_func: Arc::new(default_mutex_func),
             mutexes: Arc::new(RwLock::new(HashMap::<K, Arc<Mutex<V>>>::new())),
         }
     }
@@ -25,13 +27,15 @@ impl<K: Eq + Hash, V: Default> AsyncLocker<K, V> {
     /// use locker::AsyncLocker;
     /// use tokio::time::delay_for;
     ///
-    /// let locker = Locker::new();
+    /// let default_mutex_value = "value";
+    /// let locker = AsyncLocker::<i32, &str>::new(move || default_mutex_value);
     /// let mutex = locker.get_mutex(1).await;
     /// let _guard = mutex.lock().await; // lock
     /// let locker_clone = locker.clone();
     /// tokio::spawn(async move {
     ///     let mutex = locker.get_mutex(1).await;
-    ///     let _guard = mutex.lock().await; // wait
+    ///     let value = mutex.lock().await; // wait
+    ///     assert_eq!(default_mutex_value, *value);
     /// });
     /// delay_for(Duration::from_millis(200)).await;
     /// ```
@@ -44,7 +48,7 @@ impl<K: Eq + Hash, V: Default> AsyncLocker<K, V> {
             };
         }
         let mut mutexes = self.mutexes.write().await;
-        let new_mutex = Arc::new(Mutex::new(V::default()));
+        let new_mutex = Arc::new(Mutex::new((self.default_mutex_func)()));
         mutexes.entry(key).or_insert(new_mutex).clone()
     }
 }
@@ -57,7 +61,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_async_locker() {
-        let locker = AsyncLocker::<i32>::new();
+        let default_mutex_value = "value";
+        let locker = AsyncLocker::<i32, &str>::new(move || default_mutex_value);
         let locker_clone = locker.clone();
 
         let handle = tokio::spawn(async move {
@@ -65,8 +70,9 @@ mod tests {
             loop {
                 println!("task mutex try to lock");
                 match mutex.try_lock() {
-                    Ok(_) => {
+                    Ok(value) => {
                         println!("task mutex locked");
+                        assert_eq!(default_mutex_value, *value);
                         delay_for(Duration::from_millis(100)).await;
                         println!("task mutex unlocked");
                         break;
