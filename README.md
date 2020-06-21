@@ -10,7 +10,7 @@ use locker::AsyncLocker;
 use tokio::time::delay_for;
 
 let default_mutex_value = "value";
-let locker = AsyncLocker::<i32, &str>::new(move || default_mutex_value);
+let locker = AsyncLocker::<i32, &str>::new_custom(move || default_mutex_value);
 let mutex = locker.get_mutex(1).await;
 let _guard = mutex.lock().await; // lock
 let locker_clone = locker.clone();

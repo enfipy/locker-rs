@@ -9,8 +9,17 @@ pub struct AsyncLocker<K, V = ()> {
     mutexes: Arc<RwLock<HashMap<K, Arc<Mutex<V>>>>>,
 }
 
+impl<K: Eq + Hash, V: Default> Default for AsyncLocker<K, V> {
+    fn default() -> Self {
+        AsyncLocker {
+            default_mutex_func: Arc::new(|| Default::default()),
+            mutexes: Arc::new(RwLock::new(HashMap::<K, Arc<Mutex<V>>>::new())),
+        }
+    }
+}
+
 impl<K: Eq + Hash, V> AsyncLocker<K, V> {
-    pub fn new(default_mutex_func: impl Fn() -> V + Send + Sync + 'static) -> Self {
+    pub fn new_custom(default_mutex_func: impl Fn() -> V + Send + Sync + 'static) -> Self {
         AsyncLocker {
             default_mutex_func: Arc::new(default_mutex_func),
             mutexes: Arc::new(RwLock::new(HashMap::<K, Arc<Mutex<V>>>::new())),
@@ -28,7 +37,7 @@ impl<K: Eq + Hash, V> AsyncLocker<K, V> {
     /// use tokio::time::delay_for;
     ///
     /// let default_mutex_value = "value";
-    /// let locker = AsyncLocker::<i32, &str>::new(move || default_mutex_value);
+    /// let locker = AsyncLocker::<i32, &str>::new_custom(move || default_mutex_value);
     /// let mutex = locker.get_mutex(1).await;
     /// let _guard = mutex.lock().await; // lock
     /// let locker_clone = locker.clone();
@@ -60,9 +69,15 @@ mod tests {
     use tokio::time::delay_for;
 
     #[tokio::test]
+    async fn test_async_default_locker() {
+        let locker = AsyncLocker::<i32>::default();
+        locker.get_mutex(1).await;
+    }
+
+    #[tokio::test]
     async fn test_async_locker() {
         let default_mutex_value = "value";
-        let locker = AsyncLocker::<i32, &str>::new(move || default_mutex_value);
+        let locker = AsyncLocker::<i32, &str>::new_custom(move || default_mutex_value);
         let locker_clone = locker.clone();
 
         let handle = tokio::spawn(async move {
