@@ -4,14 +4,14 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 
 #[derive(Clone)]
-pub struct AsyncLocker<K> {
-    mutexes: Arc<RwLock<HashMap<K, Arc<Mutex<()>>>>>,
+pub struct AsyncLocker<K, V = ()> {
+    mutexes: Arc<RwLock<HashMap<K, Arc<Mutex<V>>>>>,
 }
 
-impl<K: Eq + Hash> AsyncLocker<K> {
+impl<K: Eq + Hash, V: Default> AsyncLocker<K, V> {
     pub fn new() -> Self {
         AsyncLocker {
-            mutexes: Arc::new(RwLock::new(HashMap::<K, Arc<Mutex<()>>>::new())),
+            mutexes: Arc::new(RwLock::new(HashMap::<K, Arc<Mutex<V>>>::new())),
         }
     }
 
@@ -35,7 +35,7 @@ impl<K: Eq + Hash> AsyncLocker<K> {
     /// });
     /// delay_for(Duration::from_millis(200)).await;
     /// ```
-    pub async fn get_mutex(&self, key: K) -> Arc<Mutex<()>> {
+    pub async fn get_mutex(&self, key: K) -> Arc<Mutex<V>> {
         {
             let mutexes = self.mutexes.read().await;
             let mutex_opt = mutexes.get(&key);
@@ -44,7 +44,7 @@ impl<K: Eq + Hash> AsyncLocker<K> {
             };
         }
         let mut mutexes = self.mutexes.write().await;
-        let new_mutex = Arc::new(Mutex::new(()));
+        let new_mutex = Arc::new(Mutex::new(V::default()));
         mutexes.entry(key).or_insert(new_mutex).clone()
     }
 }
@@ -57,7 +57,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_async_locker() {
-        let locker = AsyncLocker::new();
+        let locker = AsyncLocker::<i32>::new();
         let locker_clone = locker.clone();
 
         let handle = tokio::spawn(async move {
