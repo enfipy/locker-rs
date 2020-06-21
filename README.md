@@ -9,13 +9,15 @@ use std::time::Duration;
 use locker::AsyncLocker;
 use tokio::time::delay_for;
 
-let locker = AsyncLocker::new();
+let default_mutex_value = "value";
+let locker = AsyncLocker::<i32, &str>::new(move || default_mutex_value);
 let mutex = locker.get_mutex(1).await;
 let _guard = mutex.lock().await; // lock
 let locker_clone = locker.clone();
 tokio::spawn(async move {
     let mutex = locker.get_mutex(1).await;
-    let _guard = mutex.lock().await; // wait
+    let value = mutex.lock().await; // wait
+    assert_eq!(default_mutex_value, *value);
 });
 delay_for(Duration::from_millis(200)).await;
 ```
